@@ -23,8 +23,8 @@ awk -v root="$IMG_ROOT" -v base="$BASE_URL" '{
   dst = root "/" $1 "/depth_raw.png"
   print src "\t" dst
 }' "$DISH_LIST" \
-  | xargs -P "$PARALLEL" -L 1 -I LINE bash -c '
-      IFS=$"\t" read -r src dst <<< "LINE"
+  | xargs -P "$PARALLEL" -I LINE bash -c '
+      IFS=$'"'"'\t'"'"' read -r src dst <<< "LINE"
       [ -f "$dst" ] && [ -s "$dst" ] && exit 0
       mkdir -p "$(dirname "$dst")"
       curl -sSL --retry 3 --retry-delay 2 -o "$dst" "$src" || { echo "FAIL $dst" >&2; rm -f "$dst"; exit 0; }
