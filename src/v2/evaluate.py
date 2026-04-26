@@ -45,6 +45,10 @@ def main(args):
     available_ids = set([ln.strip() for ln in Path(args.available_dish_ids).read_text().splitlines() if ln.strip()])
     test_ids = _resolve_dish_ids(Path(args.split_file), available_ids)
     print(f"Eval on {len(test_ids)} dishes")
+    if len(test_ids) == 0:
+        raise RuntimeError(
+            "No test dishes found — check --split-file and --available-dish-ids paths."
+        )
 
     ds = Nutrition5kRGBD(
         dish_ids=test_ids,
@@ -159,21 +163,51 @@ def main(args):
         results[f"{name}_mae_ci95"] = [lo, hi]
 
     # Ingredient F1
-    ingr_pred_bin = (1 / (1 + np.exp(-preds_ingr_logits)) > 0.5).astype(np.int32)
+    with np.errstate(over="ignore"):
+        ingr_pred_bin = (1.0 / (1.0 + np.exp(-preds_ingr_logits)) > 0.5).astype(np.int32)
     micro, macro = multilabel_f1_micro_macro(ingr_pred_bin, targs_ingr_binary.astype(np.int32))
     results["ingr_f1_micro"] = micro
     results["ingr_f1_macro"] = macro
+    rng_f1 = np.random.default_rng(0)
+    boot_micro = np.empty(1000, dtype=np.float64)
+    boot_macro = np.empty(1000, dtype=np.float64)
+    for i in range(1000):
+        idx = rng_f1.integers(0, len(dish_ids), len(dish_ids))
+        m_i, M_i = multilabel_f1_micro_macro(ingr_pred_bin[idx], targs_ingr_binary.astype(np.int32)[idx])
+        boot_micro[i] = m_i
+        boot_macro[i] = M_i
+    results["ingr_f1_micro_ci95"] = [float(np.percentile(boot_micro, 2.5)), float(np.percentile(boot_micro, 97.5))]
+    results["ingr_f1_macro_ci95"] = [float(np.percentile(boot_macro, 2.5)), float(np.percentile(boot_macro, 97.5))]
 
     # Top-5 IoU
     iou = top_k_set_iou(preds_ingr_logits, targs_ingr_binary, k=5)
     results["top5_ingr_iou"] = float(iou.mean())
+    # Bootstrap CI (per-dish IoU values)
+    rng_iou = np.random.default_rng(0)
+    boot_iou = np.empty(1000, dtype=np.float64)
+    for i in range(1000):
+        idx = rng_iou.integers(0, len(iou), len(iou))
+        boot_iou[i] = iou[idx].mean()
+    results["top5_ingr_iou_ci95"] = [float(np.percentile(boot_iou, 2.5)), float(np.percentile(boot_iou, 97.5))]
 
     # Per-ingredient mass MAE at GT-positive positions
     if targs_ingr_mask.sum() > 0:
+        # per-dish masked mass MAE: sum(|err|*mask) / sum(mask) per dish (NaN if mask sum 0)
         diff = np.abs(preds_ingr_mass_raw - targs_ingr_mass_raw) * targs_ingr_mask
-        results["per_ingredient_mass_mae"] = float(diff.sum() / targs_ingr_mask.sum())
+        mask_sums = targs_ingr_mask.sum(axis=1)
+        per_dish = np.where(mask_sums > 0, diff.sum(axis=1) / np.maximum(mask_sums, 1), np.nan)
+        valid = ~np.isnan(per_dish)
+        results["per_ingredient_mass_mae"] = float(per_dish[valid].mean())
+        rng_pm = np.random.default_rng(0)
+        v = per_dish[valid]
+        boot_pm = np.empty(1000, dtype=np.float64)
+        for i in range(1000):
+            idx = rng_pm.integers(0, len(v), len(v))
+            boot_pm[i] = v[idx].mean()
+        results["per_ingredient_mass_mae_ci95"] = [float(np.percentile(boot_pm, 2.5)), float(np.percentile(boot_pm, 97.5))]
     else:
         results["per_ingredient_mass_mae"] = float("nan")
+        results["per_ingredient_mass_mae_ci95"] = [float("nan"), float("nan")]
 
     with open(out_dir / "eval_results.json", "w") as f:
         json.dump(results, f, indent=2)

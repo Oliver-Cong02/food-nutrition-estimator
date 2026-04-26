@@ -14,9 +14,7 @@ from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 from matplotlib.gridspec import GridSpec
-from PIL import Image
 
 
 def sanity_panel(
@@ -24,6 +22,8 @@ def sanity_panel(
     out_path: Path | str,
 ) -> None:
     """One row per sample: [RGB | Depth | label table]. samples = list of __getitem__ outputs."""
+    if not samples:
+        raise ValueError("samples cannot be empty")
     n = len(samples)
     fig = plt.figure(figsize=(12, 3 * n))
     gs = GridSpec(n, 3, figure=fig, width_ratios=[1, 1, 1.4])
@@ -50,7 +50,13 @@ def scatter_pred_vs_gt(
 ) -> None:
     """N-column scatter plots, one per metric name."""
     n = len(names)
+    if preds.size == 0 or targets.size == 0:
+        raise ValueError("preds and targets must be non-empty arrays")
+    if preds.shape != targets.shape:
+        raise ValueError(f"shape mismatch: preds {preds.shape} vs targets {targets.shape}")
     fig, axes = plt.subplots(1, n, figsize=(4 * n, 4))
+    if n == 1:
+        axes = [axes]   # plt returns a single Axes when nrows=ncols=1
     for i, name in enumerate(names):
         ax = axes[i]
         ax.scatter(targets[:, i], preds[:, i], s=6, alpha=0.4)
