@@ -1,0 +1,27 @@
+# src/v2/configs/main.yaml
+run_id: main_seed42
+out_root: docs/runs
+imagery_root: data/sample/imagery
+metadata_cafe1: data/raw/metadata/dish_metadata_cafe1.csv
+metadata_cafe2: data/raw/metadata/dish_metadata_cafe2.csv
+train_ids_path: data/sample/splits/train_ids.txt
+val_ids_path: data/sample/splits/val_ids.txt
+available_ids_path: data/sample/available_dish_ids.txt
+vocab_csv: data/raw/metadata/ingredients_metadata.csv
+stats_path: data/sample/train_stats.json
+
+use_depth: true
+n_epochs: 50
+batch_size: 64
+grad_accum: 1
+lr_backbone: 3.0e-5
+lr_head: 3.0e-4
+weight_decay: 0.05
+warmup_frac: 0.05
+ema_decay: 0.9999
+early_stop_patience: 10
+seed: 42
+bf16: true
+num_workers: 6
+log_every: 50
+overfit_micro: false
