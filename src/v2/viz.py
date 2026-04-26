@@ -29,7 +29,7 @@ def sanity_panel(
     gs = GridSpec(n, 3, figure=fig, width_ratios=[1, 1, 1.4])
     for i, s in enumerate(samples):
         rgb = s["rgb"].permute(1, 2, 0).numpy()
-        rgb = (rgb - rgb.min()) / max(rgb.ptp(), 1e-6)
+        rgb = (rgb - rgb.min()) / max(np.ptp(rgb), 1e-6)
         depth = s["depth"][0].numpy()
         ax_r = fig.add_subplot(gs[i, 0]); ax_r.imshow(rgb); ax_r.set_title(f"{s['dish_id']} rgb"); ax_r.axis("off")
         ax_d = fig.add_subplot(gs[i, 1]); ax_d.imshow(depth, cmap="viridis"); ax_d.set_title("depth (z)"); ax_d.axis("off")
