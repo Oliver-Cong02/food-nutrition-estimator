@@ -31,7 +31,10 @@ def _adapt_first_conv_to_2ch(conv: nn.Conv2d) -> nn.Conv2d:
         kernel_size=conv.kernel_size,
         stride=conv.stride,
         padding=conv.padding,
+        dilation=conv.dilation,
+        groups=conv.groups,
         bias=(conv.bias is not None),
+        padding_mode=conv.padding_mode,
     )
     with torch.no_grad():
         new_conv.weight.copy_(new_w)
@@ -47,7 +50,7 @@ class NutritionRGBDModel(nn.Module):
         rgb_w = ConvNeXt_Base_Weights.IMAGENET1K_V1
         self.rgb_enc = convnext_base(weights=rgb_w)
         rgb_feat_dim = 1024
-        self.rgb_enc.classifier = nn.Identity()  # leave global pool's flatten in classifier
+        self.rgb_enc.classifier = nn.Identity()  # discard pretrained head; pooling done manually in encode_rgb
         # ConvNeXt's classifier = LayerNorm2d -> Flatten -> Linear; we replaced with Identity.
         # We use features-level output after avgpool-flatten manually below.
         self.rgb_avgpool = nn.AdaptiveAvgPool2d(1)
@@ -61,6 +64,7 @@ class NutritionRGBDModel(nn.Module):
         self.d_enc.features[0][0] = _adapt_first_conv_to_2ch(old_conv)
         self.d_enc.classifier = nn.Identity()
         d_feat_dim = 768
+        self._d_feat_dim = d_feat_dim
         self.d_avgpool = nn.AdaptiveAvgPool2d(1)
         self.d_norm = nn.LayerNorm(d_feat_dim)
 
@@ -93,7 +97,7 @@ class NutritionRGBDModel(nn.Module):
         if use_depth:
             feat_d = self.encode_depth(depth)
         else:
-            feat_d = torch.zeros(rgb.size(0), 768, device=rgb.device, dtype=feat_rgb.dtype)
+            feat_d = torch.zeros(rgb.size(0), self._d_feat_dim, device=rgb.device, dtype=feat_rgb.dtype)
         z = self.fuse(torch.cat([feat_rgb, feat_d], dim=1))
         return {
             "scalar": self.head_scalar(z),
