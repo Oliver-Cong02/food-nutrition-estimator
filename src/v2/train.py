@@ -51,6 +51,7 @@ class TrainConfig:
     available_ids_path: str
     vocab_csv: str
     stats_path: str            # produced by scripts/compute_train_stats.py
+    ckpt_root: str = "checkpoints/v2"  # default; override in config to make absolute
     use_depth: bool = True
     n_epochs: int = 50
     batch_size: int = 64
@@ -69,8 +70,13 @@ class TrainConfig:
 
     @classmethod
     def from_yaml(cls, path: str) -> "TrainConfig":
+        from dataclasses import fields
         with open(path) as f:
             d = yaml.safe_load(f)
+        known = {f.name for f in fields(cls)}
+        extra = set(d) - known
+        if extra:
+            raise ValueError(f"Unknown config keys in {path}: {sorted(extra)}")
         return cls(**d)
 
 
@@ -189,7 +195,7 @@ def main(cfg: TrainConfig):
 
     out_dir = Path(cfg.out_root) / cfg.run_id
     out_dir.mkdir(parents=True, exist_ok=True)
-    ckpt_dir = Path("checkpoints/v2") / cfg.run_id
+    ckpt_dir = Path(cfg.ckpt_root) / cfg.run_id
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     fh = logging.FileHandler(out_dir / "train.log"); fh.setLevel(logging.INFO)
@@ -212,7 +218,10 @@ def main(cfg: TrainConfig):
         model.param_groups(cfg.lr_backbone, cfg.lr_head, cfg.weight_decay),
     )
     weighter = UncertaintyWeighter(["scalar", "ingr_cls", "ingr_mass", "atwater", "kcal_consist"]).to(device)
-    optimizer.add_param_group({"params": list(weighter.parameters()), "lr": cfg.lr_head, "weight_decay": 0.0})
+    # Uncertainty weighter log-variances need a smaller LR than task heads (they're
+    # dimensionless scalars that should drift slowly). Excluded from cosine schedule
+    # — keeping s_t free to adapt throughout training.
+    optimizer.add_param_group({"params": list(weighter.parameters()), "lr": cfg.lr_head * 0.1, "weight_decay": 0.0})
     densities = torch.tensor(vocab.idx_to_density, dtype=torch.float32, device=device)
     pos_weight = build_pos_weight(train_loader, vocab.size, device)
 
@@ -220,7 +229,6 @@ def main(cfg: TrainConfig):
     total_steps = len(train_loader) * cfg.n_epochs
     warmup_steps = int(total_steps * cfg.warmup_frac)
     best_val = math.inf; bad = 0
-    scaler = torch.amp.GradScaler("cuda", enabled=False)  # bf16 doesn't need scaler
 
     step = 0
     for epoch in range(cfg.n_epochs):
@@ -229,14 +237,19 @@ def main(cfg: TrainConfig):
             for k, v in batch.items():
                 if torch.is_tensor(v): batch[k] = v.to(device, non_blocking=True)
 
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=cfg.bf16):
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=cfg.bf16 and device.type == "cuda"):
                 total, parts = compute_total_loss(
                     model, batch, weighter, densities, stats, pos_weight, cfg.use_depth
                 )
 
+            if not torch.isfinite(total):
+                logger.error("NaN/Inf loss at step=%d epoch=%d — aborting", step, epoch)
+                return
+
             (total / cfg.grad_accum).backward()
 
-            # Adjust LR per-param-group for warmup/cosine
+            # Adjust LR per-param-group for warmup/cosine — backbone + head only.
+            # Weighter LR is fixed (see above) so s_t can keep adapting after head LR decays.
             sched_factor = lr_schedule(step, total_steps, warmup_steps)
             for pg, base in zip(optimizer.param_groups[:2], [cfg.lr_backbone, cfg.lr_head]):
                 pg["lr"] = base * sched_factor
@@ -252,16 +265,18 @@ def main(cfg: TrainConfig):
 
                 if step % cfg.log_every == 0:
                     logger.info(
-                        "step=%d epoch=%d loss=%.4f scalar=%.4f cls=%.4f mass=%.4f atw=%.4f kc=%.4f gn=%.2f lr=%.2e",
+                        "step=%d epoch=%d loss=%.4f scalar=%.4f cls=%.4f mass=%.4f atw=%.4f kc=%.4f gn=%.2f lr=%.2e "
+                        "s={s:.2f},{si:.2f},{sm:.2f},{sa:.2f},{sk:.2f}".format(
+                            s=float(parts["s_scalar"]), si=float(parts["s_ingr_cls"]),
+                            sm=float(parts["s_ingr_mass"]), sa=float(parts["s_atwater"]),
+                            sk=float(parts["s_kcal_consist"]),
+                        ),
                         step, epoch, float(total),
                         float(parts["scalar"]), float(parts["ingr_cls"]),
                         float(parts["ingr_mass"]), float(parts["atwater"]),
                         float(parts["kcal_consist"]), float(grad_norm),
                         optimizer.param_groups[0]["lr"],
                     )
-                    if not torch.isfinite(total):
-                        logger.error("NaN/Inf loss — aborting")
-                        return
 
         # End of epoch — eval on val with EMA weights
         val_model = copy.deepcopy(model)
@@ -278,11 +293,21 @@ def main(cfg: TrainConfig):
             torch.save({"model": model.state_dict()}, ckpt_dir / "g4_fail_last.pt")
             return
 
-        # Save best
+        # Save best (atomic: write temp, then rename)
         if val_score < best_val:
             best_val = val_score; bad = 0
-            torch.save({"model": model.state_dict(), "epoch": epoch}, ckpt_dir / "best.pt")
-            torch.save({"model": ema.state_dict(), "epoch": epoch}, ckpt_dir / "ema.pt")
+            tmp = ckpt_dir / "best_tmp.pt"
+            torch.save({
+                "model": model.state_dict(),
+                "ema": ema.state_dict(),
+                "epoch": epoch,
+                "val_score": val_score,
+            }, tmp)
+            tmp.rename(ckpt_dir / "best.pt")
+            # Also dump just the EMA weights for downstream eval scripts that load them directly
+            tmp2 = ckpt_dir / "ema_tmp.pt"
+            torch.save({"model": ema.state_dict(), "epoch": epoch}, tmp2)
+            tmp2.rename(ckpt_dir / "ema.pt")
         else:
             bad += 1
             if bad >= cfg.early_stop_patience:
