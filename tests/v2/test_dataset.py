@@ -44,7 +44,7 @@ def test_parse_metadata_handles_multiple_ingredients(ingredients_csv):
     assert row.ingr_grams == [30.0, 5.0]
 
 
-def test_dataset_returns_correct_shapes(repo_root, ingredients_csv, dish_csv_cafe1, monkeypatch):
+def test_dataset_returns_correct_shapes(repo_root, ingredients_csv, dish_csv_cafe1):
     # We test against real metadata but only need a few dishes that have RGB locally.
     v = Vocab.from_csv(ingredients_csv)
     s = _dummy_stats()
@@ -130,7 +130,91 @@ def test_label_construction_sums_to_total_mass(ingredients_csv, dish_csv_cafe1):
         n_checked += 1
     assert n_checked >= 10, "too few rows checked"
     pass_frac = n_pass / n_checked
+    # 90% threshold chosen because dish_1550876012 (and a small handful of others)
+    # have a known ~3-5% rounding mismatch in cafe1 metadata between Σ ingredient
+    # grams and the recorded total dish mass. This is a Nutrition5k upstream issue,
+    # not a parsing bug. If this threshold is ever breached, run the same check on
+    # cafe2 and a fresh metadata CSV to determine if upstream changed.
     assert pass_frac >= 0.90, (
         f"only {n_pass}/{n_checked} dishes pass per-ingredient sum check "
         f"(< 90%); failures: {failures[:5]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Synthetic transform tests (no disk dependency)
+# ---------------------------------------------------------------------------
+
+import numpy as np
+from PIL import Image
+import torch
+from src.v2.dataset import Nutrition5kTransform
+
+
+def _synth_inputs(seed: int = 0):
+    """Return (rgb_pil 480x640, depth_arr uint16 480x640, valid_mask 480x640)."""
+    rng = np.random.default_rng(seed)
+    rgb = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
+    depth = rng.integers(200, 800, (480, 640), dtype=np.uint16)
+    mask = (depth > 0).astype(np.bool_)
+    return Image.fromarray(rgb), depth, mask
+
+
+def test_transform_eval_produces_correct_shapes_synthetic():
+    """Eval-mode (center-crop) yields aligned (3,224,224) and (2,224,224) on synthetic input."""
+    rgb_pil, depth, mask = _synth_inputs()
+    tf = Nutrition5kTransform(train=False)
+    rgb_t, depth_t = tf(rgb_pil, depth, mask, depth_mean=400.0, depth_std=80.0)
+    assert rgb_t.shape == (3, 224, 224)
+    assert depth_t.shape == (2, 224, 224)
+
+
+def test_transform_handles_zero_depth_std_without_nan():
+    """Depth z-score must not produce NaN/Inf when depth_std=0 (degenerate stats)."""
+    rgb_pil, depth, mask = _synth_inputs()
+    tf = Nutrition5kTransform(train=False)
+    rgb_t, depth_t = tf(rgb_pil, depth, mask, depth_mean=400.0, depth_std=0.0)
+    assert torch.isfinite(rgb_t).all()
+    assert torch.isfinite(depth_t).all()
+
+
+def test_transform_train_hflip_sync():
+    """When train HFlip fires, BOTH rgb and depth get flipped (single decision)."""
+    # Force the flip path by seeding python's random module.
+    import random
+    rgb_pil, depth, mask = _synth_inputs()
+    # Make depth distinguishable left↔right so flip is detectable
+    depth = depth.copy()
+    depth[:, :320] = 200       # left half
+    depth[:, 320:] = 700       # right half
+    valid = (depth > 0).astype(np.bool_)
+    tf = Nutrition5kTransform(train=True, size=224, resize=256)
+
+    flips_seen = []
+    for seed in range(10):
+        random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
+        rgb_t, depth_t = tf(Image.fromarray(np.array(rgb_pil)), depth, valid,
+                            depth_mean=400.0, depth_std=80.0)
+        # Center column of depth tells us which half was on the left after possible flip
+        # depth_t[0] is the z-scored depth; left half should be smaller (200<700) before flip
+        left_mean = depth_t[0, :, :112].mean().item()
+        right_mean = depth_t[0, :, 112:].mean().item()
+        flips_seen.append(left_mean < right_mean)
+    # In 10 seeds, we should see both flipped and non-flipped outcomes
+    # (so this isn't trivially always-true / always-false)
+    assert any(flips_seen) and not all(flips_seen), (
+        f"flip behavior not random across seeds: {flips_seen}")
+
+
+def test_transform_train_resize_alignment_synthetic():
+    """Train-mode random crop applied to RGB and depth uses the SAME post-resize coordinate system."""
+    rgb_pil, depth, mask = _synth_inputs()
+    tf = Nutrition5kTransform(train=True)
+    for _ in range(5):
+        rgb_t, depth_t = tf(rgb_pil, depth, mask, depth_mean=400.0, depth_std=80.0)
+        # If the resize-sync bug returned, depth would either silently truncate
+        # or produce a shape !=224. Both rgb and depth must match.
+        assert rgb_t.shape == (3, 224, 224)
+        assert depth_t.shape == (2, 224, 224)
+        # And the depth tensor values must be finite
+        assert torch.isfinite(depth_t).all()

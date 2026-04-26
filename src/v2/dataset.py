@@ -17,7 +17,6 @@ Test-time we also expose RAW (unnormalized) versions for evaluation:
 """
 from __future__ import annotations
 
-import os
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,8 +62,11 @@ def parse_dish_metadata_row(line: str, vocab: Vocab) -> DishLabels:
     if len(parts) < 6:
         raise ValueError(f"row too short: {line[:80]}")
     dish_id = parts[0]
-    kcal = float(parts[1]); mass = float(parts[2])
-    fat = float(parts[3]);  carb = float(parts[4]); protein = float(parts[5])
+    kcal = float(parts[1])
+    mass = float(parts[2])
+    fat = float(parts[3])
+    carb = float(parts[4])
+    protein = float(parts[5])
     ingr_part = parts[6:]
     if len(ingr_part) % 7 != 0:
         # Drop trailing partial entry — defensive
@@ -86,6 +88,7 @@ def parse_dish_metadata_row(line: str, vocab: Vocab) -> DishLabels:
 
 def _load_metadata_dict(metadata_csvs: Sequence[Path | str], vocab: Vocab) -> dict[str, DishLabels]:
     out: dict[str, DishLabels] = {}
+    n_skipped = 0
     for csv in metadata_csvs:
         with open(csv) as f:
             for ln in f:
@@ -95,8 +98,12 @@ def _load_metadata_dict(metadata_csvs: Sequence[Path | str], vocab: Vocab) -> di
                 try:
                     row = parse_dish_metadata_row(ln, vocab)
                     out[row.dish_id] = row
-                except Exception:
+                except ValueError:           # narrow except (Minor Fix 6)
+                    n_skipped += 1
                     continue
+    if n_skipped:
+        import sys
+        print(f"[dataset] skipped {n_skipped} malformed metadata rows", file=sys.stderr)
     return out
 
 
@@ -175,7 +182,7 @@ class Nutrition5kTransform:
             depth_t = depth_t * random.uniform(0.95, 1.05)
 
         # Apply mask: invalid → 0 (post-z-score this means "mean", which is the safest fill)
-        depth_norm = (depth_t - depth_mean) / max(depth_std, 1e-6)
+        depth_norm = (depth_t - depth_mean) / (depth_std + 1e-6)
         depth_norm = depth_norm * mask_t   # zero out invalid
         depth_out = torch.stack([depth_norm.float(), mask_t.float()], dim=0)
         return rgb, depth_out
@@ -210,6 +217,8 @@ class Nutrition5kRGBD(Dataset):
         self.vocab = vocab
         self.stats = stats
         self.transform = transform
+        if self.transform is None:
+            self.transform = build_default_eval_transform()
         meta = _load_metadata_dict(metadata_csvs, vocab)
         self.dishes: List[DishLabels] = []
         for did in dish_ids:
@@ -242,8 +251,6 @@ class Nutrition5kRGBD(Dataset):
         rgb_p = self.imagery_root / d.dish_id / "rgb.png"
         rgb_pil = Image.open(rgb_p).convert("RGB")
         depth_arr, valid = self._read_depth(d.dish_id)
-        if self.transform is None:
-            self.transform = build_default_eval_transform()
         rgb_t, depth_t = self.transform(rgb_pil, depth_arr, valid,
                                         self.stats.depth_mean, self.stats.depth_std)
 
