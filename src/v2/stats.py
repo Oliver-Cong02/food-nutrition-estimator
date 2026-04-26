@@ -6,13 +6,13 @@ All values stored as plain Python types in JSON for portability.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
 
-@dataclass
+@dataclass(eq=False)
 class TrainStats:
     scalar_mean: np.ndarray  # shape (5,)  — kcal, mass, fat, carb, protein
     scalar_std: np.ndarray   # shape (5,)
@@ -22,16 +22,16 @@ class TrainStats:
     mass_log1p_std: float
 
     def scalar_z(self, x: np.ndarray) -> np.ndarray:
-        return (x - self.scalar_mean) / self.scalar_std
+        return (x - self.scalar_mean) / (self.scalar_std + 1e-6)
 
     def scalar_inv_z(self, z: np.ndarray) -> np.ndarray:
         return z * self.scalar_std + self.scalar_mean
 
     def depth_z(self, x: np.ndarray) -> np.ndarray:
-        return (x - self.depth_mean) / self.depth_std
+        return (x - self.depth_mean) / (self.depth_std + 1e-6)
 
     def mass_log1p_z(self, grams: np.ndarray) -> np.ndarray:
-        return (np.log1p(grams) - self.mass_log1p_mean) / self.mass_log1p_std
+        return (np.log1p(grams) - self.mass_log1p_mean) / (self.mass_log1p_std + 1e-6)
 
     def mass_log1p_inv_z(self, z: np.ndarray) -> np.ndarray:
         return np.expm1(z * self.mass_log1p_std + self.mass_log1p_mean)
@@ -48,7 +48,7 @@ class TrainStats:
         }, indent=2))
 
     @classmethod
-    def load(cls, path: Path | str) -> "TrainStats":
+    def load(cls, path: Path | str) -> TrainStats:
         d = json.loads(Path(path).read_text())
         return cls(
             scalar_mean=np.array(d["scalar_mean"], dtype=np.float32),

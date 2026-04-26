@@ -27,6 +27,10 @@ def test_save_load(tmp_path):
     s2 = TrainStats.load(p)
     np.testing.assert_array_equal(s.scalar_mean, s2.scalar_mean)
     assert s.depth_mean == s2.depth_mean
+    np.testing.assert_array_equal(s.scalar_std, s2.scalar_std)
+    assert s.depth_std == s2.depth_std
+    assert s.mass_log1p_mean == s2.mass_log1p_mean
+    assert s.mass_log1p_std == s2.mass_log1p_std
 
 
 def test_mass_log1p_z_inv():
