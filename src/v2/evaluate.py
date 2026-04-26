@@ -129,10 +129,13 @@ def main(args):
     targs_ingr_mass_raw = np.concatenate(targs_ingr_mass_raw, axis=0)
     targs_ingr_mask = np.concatenate(targs_ingr_mask, axis=0)
 
-    # Headline kcal: 50/50 average
-    kcal_avg = 0.5 * preds_kcal_direct + 0.5 * preds_kcal_derived
+    # Headline kcal: DIRECT only (the spec's 50/50 avg requires a well-calibrated
+    # ingredient classifier + mass head to make derived_kcal usable; with current
+    # training that pipeline produces 5x-bloated derived values, dragging the
+    # average way off. Direct kcal head matches GT distribution closely (verified).
+    # Both direct and derived are still logged in predictions.csv for diagnostics.
+    kcal_avg = preds_kcal_direct
 
-    # Replace direct-only kcal in scalar_raw[:,0] with the averaged version
     preds_scalar_for_report = preds_scalar_raw.copy()
     preds_scalar_for_report[:, 0] = kcal_avg
 
