@@ -33,7 +33,7 @@ Beat the Google Nutrition5k paper's "Direct Prediction" baseline on the official
 Dual-stream RGB-D late fusion → 3 prediction heads + auxiliary derived-kcal path.
 
 ```
-RGB (3,224,224) ──► ConvNeXt-Base (ImageNet-22k) ──► feat_rgb (1024)
+RGB (3,224,224) ──► ConvNeXt-Base (ImageNet-1K, IMAGENET1K_V1) ──► feat_rgb (1024)
                                                                 │
 Depth+Mask (2,224,224) ──► ConvNeXt-Tiny (RGB-pretrained) ──► feat_d (768)
                                                                 │
