@@ -58,6 +58,8 @@ def top_k_set_iou(scores: np.ndarray, target_binary: np.ndarray, k: int = 5) -> 
     Returns (N,) array.
     """
     n, v = scores.shape
+    if k > v:
+        raise ValueError(f"k={k} cannot exceed vocab size v={v}")
     top_idx = np.argpartition(-scores, kth=k - 1, axis=1)[:, :k]
     iou = np.zeros(n, dtype=np.float64)
     for i in range(n):

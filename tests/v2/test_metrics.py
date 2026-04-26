@@ -7,6 +7,7 @@ from src.v2.metrics import (
     multilabel_f1_micro_macro,
     top_k_set_iou,
     paired_bootstrap_mae,
+    bootstrap_ci_mae,
 )
 
 
@@ -50,3 +51,14 @@ def test_paired_bootstrap_mae_shape():
     t = rng.normal(size=100)
     delta_mean, ci_low, ci_high = paired_bootstrap_mae(a, b, t, n=200, seed=0)
     assert ci_low <= delta_mean <= ci_high
+
+
+def test_bootstrap_ci_mae_ordering_and_shape():
+    rng = np.random.default_rng(0)
+    pred = rng.normal(size=100)
+    target = np.zeros(100, dtype=np.float64)
+    lo, hi = bootstrap_ci_mae(pred, target, n=200, seed=0)
+    assert isinstance(lo, float) and isinstance(hi, float)
+    assert lo < hi
+    # MAE of pred against zeros is mean(|pred|), which for standard normal is ~0.8
+    assert 0.5 < lo and hi < 1.0
