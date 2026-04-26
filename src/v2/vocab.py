@@ -46,6 +46,12 @@ class Vocab:
                 rows.append((int(r["id"]), r["ingr"].strip(), float(r["cal/g"])))
         rows.sort(key=lambda r: r[0])
 
+        seen_ids: set[int] = set()
+        for int_id, _, _ in rows:
+            if int_id in seen_ids:
+                raise ValueError(f"Duplicate ingredient id {int_id} in {csv_path}")
+            seen_ids.add(int_id)
+
         v = cls()
         for int_id, name, density in rows:
             ingr_id = f"ingr_{int_id:010d}"

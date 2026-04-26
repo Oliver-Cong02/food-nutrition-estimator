@@ -13,8 +13,7 @@ def test_build_from_csv_has_555_entries(ingredients_csv):
 
 def test_id_to_idx_roundtrip(ingredients_csv):
     v = Vocab.from_csv(ingredients_csv)
-    for ingr_id in list(v.id_to_idx.keys())[:5]:
-        idx = v.id_to_idx[ingr_id]
+    for ingr_id, idx in v.id_to_idx.items():
         assert v.idx_to_id[idx] == ingr_id
 
 
@@ -33,3 +32,5 @@ def test_save_load_roundtrip(ingredients_csv, tmp_path):
     assert v.size == v2.size
     assert v.id_to_idx == v2.id_to_idx
     assert v.idx_to_density == v2.idx_to_density
+    assert v.idx_to_id == v2.idx_to_id
+    assert v.idx_to_name == v2.idx_to_name
