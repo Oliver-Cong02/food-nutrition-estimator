@@ -131,12 +131,15 @@ class Nutrition5kTransform:
         depth_mean: float,
         depth_std: float,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # Resize keeping aspect
-        rgb_pil = TF.resize(rgb_pil, self.resize, antialias=True)
-        depth_t = torch.from_numpy(depth_arr.astype(np.float32))[None, None, ...]   # (1,1,H,W)
+        # Resize RGB and depth to the SAME square (self.resize x self.resize) so crop
+        # coords are consistent across both. Skipping aspect-ratio preservation here
+        # is OK because Nutrition5k overhead images are always 640x480 — close to 4:3.
+        target = (self.resize, self.resize)
+        rgb_pil = TF.resize(rgb_pil, list(target), antialias=True)
+        depth_t = torch.from_numpy(depth_arr.astype(np.float32))[None, None, ...]
         mask_t = torch.from_numpy(valid_mask.astype(np.float32))[None, None, ...]
-        depth_t = F.interpolate(depth_t, size=self.resize, mode="bilinear", align_corners=False)[0, 0]
-        mask_t = F.interpolate(mask_t, size=self.resize, mode="nearest")[0, 0]
+        depth_t = F.interpolate(depth_t, size=target, mode="bilinear", align_corners=False)[0, 0]
+        mask_t = F.interpolate(mask_t, size=target, mode="nearest")[0, 0]
 
         # Crop
         if self.train:

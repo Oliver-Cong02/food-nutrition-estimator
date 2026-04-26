@@ -78,6 +78,30 @@ def test_dataset_returns_correct_shapes(repo_root, ingredients_csv, dish_csv_caf
     assert int(sample["y_ingr_mask"].sum()) >= 1
 
 
+def test_train_transform_produces_aligned_rgb_depth(repo_root, ingredients_csv, dish_csv_cafe1):
+    """Train-mode transform must produce RGB and depth at the SAME 224x224 shape."""
+    v = Vocab.from_csv(ingredients_csv)
+    s = _dummy_stats()
+    img_root = repo_root / "data" / "sample" / "imagery"
+    if not img_root.is_dir():
+        pytest.skip("no imagery available")
+    dish_ids = [d.name for d in img_root.iterdir() if (d / "rgb.png").is_file()][:2]
+    if len(dish_ids) < 1:
+        pytest.skip("no dishes")
+    ds = Nutrition5kRGBD(
+        dish_ids=dish_ids, metadata_csvs=[dish_csv_cafe1], imagery_root=img_root,
+        vocab=v, stats=s, transform=build_default_train_transform(),
+        require_depth=False,
+    )
+    if len(ds) == 0:
+        pytest.skip("no usable dishes after metadata filter")
+    # Run __getitem__ a few times to exercise random crop + flip
+    for _ in range(5):
+        sample = ds[0]
+        assert sample["rgb"].shape == (3, 224, 224), f"rgb {sample['rgb'].shape}"
+        assert sample["depth"].shape == (2, 224, 224), f"depth {sample['depth'].shape}"
+
+
 def test_label_construction_sums_to_total_mass(ingredients_csv, dish_csv_cafe1):
     """Per-ingredient grams should sum (within rounding) to total dish mass for at
     least 90% of rows. Some dishes have small upstream rounding mismatches in
