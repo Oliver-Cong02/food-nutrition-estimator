@@ -155,7 +155,11 @@ def compute_total_loss(model, batch, weighter: UncertaintyWeighter,
                   + torch.tensor(stats.scalar_mean, device=sc_pred_z.device)
     direct_kcal = sc_pred_raw[:, 0]
     fat = sc_pred_raw[:, 2]; carb = sc_pred_raw[:, 3]; protein = sc_pred_raw[:, 4]
-    L_atwater = atwater_loss(direct_kcal, fat, carb, protein)
+    # Divide raw-units losses by std_kcal so gradients backprop'd through the inverse z-score
+    # are in the same magnitude as the z-scored Huber losses. Without this, the chain rule
+    # multiplies gradients by std_kcal≈222, making atwater/kcal_consist dominate updates ~500x.
+    kcal_scale = float(stats.scalar_std[0])
+    L_atwater = atwater_loss(direct_kcal, fat, carb, protein) / kcal_scale
     mass_raw = torch.expm1(out["ingr_mass"] * stats.mass_log1p_std + stats.mass_log1p_mean).clamp(min=0)
     # Mask by GT presence during TRAINING so derived_kcal sums only over actually-present
     # ingredients. Without this, at init the mass head outputs ~expm1(mass_log1p_mean)≈8g
@@ -163,7 +167,7 @@ def compute_total_loss(model, batch, weighter: UncertaintyWeighter,
     # making L_kcal_consist ≈ 4 orders of magnitude larger than other losses and
     # poisoning training. (Eval-time uses sigmoid(ingr_logits) > 0.5 instead.)
     derived_kcal = (mass_raw * densities[None, :] * batch["y_ingr_mask"]).sum(dim=1)
-    L_kcal_consist = kcal_consistency_loss(direct_kcal, derived_kcal)
+    L_kcal_consist = kcal_consistency_loss(direct_kcal, derived_kcal) / kcal_scale
 
     losses = {
         "scalar": L_scalar, "ingr_cls": L_ingr_cls, "ingr_mass": L_ingr_mass,
