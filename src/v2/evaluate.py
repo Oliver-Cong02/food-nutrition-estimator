@@ -95,7 +95,11 @@ def main(args):
             ingr_mass_raw = torch.expm1(
                 ingr_mass_z * stats.mass_log1p_std + stats.mass_log1p_mean
             ).clamp(min=0.0)
-            kcal_derived = (ingr_mass_raw * densities[None, :]).sum(dim=1)
+            # Mask by predicted ingredient presence (sigmoid > 0.5) so absent slots
+            # don't contribute spurious mass to derived_kcal. Mirrors the GT-mask
+            # used during training (see train.py compute_total_loss).
+            ingr_present = (torch.sigmoid(out["ingr_logits"]) > 0.5).float()
+            kcal_derived = (ingr_mass_raw * densities[None, :] * ingr_present).sum(dim=1)
             preds_scalar_raw.append(scalar_raw.cpu().numpy())
             preds_kcal_direct.append(kcal_direct.cpu().numpy())
             preds_kcal_derived.append(kcal_derived.cpu().numpy())
