@@ -1,6 +1,7 @@
 # src/v2/configs/ablation_no_depth.yaml
 run_id: ablation_no_depth_seed42
 out_root: docs/runs
+ckpt_root: checkpoints/v2
 imagery_root: data/sample/imagery
 metadata_cafe1: data/raw/metadata/dish_metadata_cafe1.csv
 metadata_cafe2: data/raw/metadata/dish_metadata_cafe2.csv

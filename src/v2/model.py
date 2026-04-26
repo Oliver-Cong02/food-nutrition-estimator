@@ -3,7 +3,7 @@
 Spec: §3.
 
 Architecture:
-    rgb     -> ConvNeXt-Base   (ImageNet-22k pretrained)  -> feat_rgb (1024)
+    rgb     -> ConvNeXt-Base   (ImageNet-1K pretrained (IMAGENET1K_V1))  -> feat_rgb (1024)
     depth   -> ConvNeXt-Tiny   (channel-mean adapted to 2ch) -> feat_d (768)
     concat  -> MLP(1792 -> 512) -> z (512)
     z       -> head_scalar  (Linear 512 -> 5)

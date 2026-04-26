@@ -83,7 +83,7 @@ Expected wall-clock: 5–15 min. Run this in a background subagent while main th
 
 **RGB**: PIL → [0,1] → ImageNet mean/std → resize 256 → train RandomResizedCrop(0.7-1.0)→224, val CenterCrop 224.
 
-**Depth**: 16-bit raw PNG (mm) → float32 → clip [200, 800] mm → produce `valid_mask = (depth > 0)` → z-score using train-set statistics (cached) → synced spatial transforms with RGB. Final tensor shape (2, 224, 224) = stack(depth_normalized, valid_mask).
+**Depth**: 16-bit raw PNG (mm) → float32 → clip [2500, 6000] mm (empirical p1-p99 range; pre-2026 spec [200,800] was wrong) → produce `valid_mask = (depth > 0)` → z-score using train-set statistics (cached) → synced spatial transforms with RGB. Final tensor shape (2, 224, 224) = stack(depth_normalized, valid_mask).
 
 **Missing depth dish**: skip (decision logged); should be 0 if download is clean.
 

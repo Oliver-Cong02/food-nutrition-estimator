@@ -13,16 +13,12 @@ import copy
 import json
 import logging
 import math
-import os
 import random
-import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 import yaml
 from torch.utils.data import DataLoader
 
@@ -195,6 +191,8 @@ def main(cfg: TrainConfig):
 
     out_dir = Path(cfg.out_root) / cfg.run_id
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Persist resolved config for reproducibility
+    (out_dir / "config.yaml").write_text(yaml.dump(asdict(cfg), default_flow_style=False))
     ckpt_dir = Path(cfg.ckpt_root) / cfg.run_id
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -283,13 +281,16 @@ def main(cfg: TrainConfig):
         val_model.load_state_dict(ema.state_dict(), strict=True)
         val_metrics = evaluate_val(val_model, val_loader, weighter, densities, stats,
                                    pos_weight, cfg.use_depth, device)
+        # val_metrics["scalar"] is the masked Huber loss on z-scored 5-vec — used as a
+        # robust proxy for per-target z-score MAE for early-stopping/G4. They differ in
+        # the |err| > delta region (Huber saturates linearly there).
         val_score = val_metrics.get("scalar", math.inf)
-        logger.info("epoch=%d val_scalar=%.4f val_total_metrics=%s", epoch, val_score,
+        logger.info("epoch=%d val_huber_z=%.4f val_total_metrics=%s", epoch, val_score,
                     {k: round(v, 4) for k, v in val_metrics.items()})
 
         # G4 sanity (epoch 1)
         if epoch == 0 and val_score >= 1.0:
-            logger.error("G4 FAIL: val z-score MAE >= 1.0 at epoch 1 (%.4f). Stop and diagnose.", val_score)
+            logger.error("G4 FAIL: val Huber(z-score) >= 1.0 at epoch 1 (%.4f). Stop and diagnose.", val_score)
             torch.save({"model": model.state_dict()}, ckpt_dir / "g4_fail_last.pt")
             return
 

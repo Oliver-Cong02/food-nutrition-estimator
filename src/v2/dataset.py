@@ -34,8 +34,8 @@ from .stats import TrainStats
 from .vocab import Vocab
 
 
-DEPTH_CLIP_MIN = 200.0   # mm
-DEPTH_CLIP_MAX = 800.0
+DEPTH_CLIP_MIN = 2500.0   # mm — empirical p1 of valid Realsense overhead pixels is ~3000
+DEPTH_CLIP_MAX = 6000.0   # mm — empirical p99 ~4867; pad for tails. Anything 65535 = invalid sensor noise
 
 
 @dataclass
