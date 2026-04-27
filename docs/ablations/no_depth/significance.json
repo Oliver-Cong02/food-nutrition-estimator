@@ -1,0 +1,52 @@
+{
+  "kcal": {
+    "main_mae": 61.86,
+    "ablation_mae": 57.58,
+    "delta": -4.19,
+    "ci95": [
+      -6.9,
+      -1.64
+    ],
+    "significant": true
+  },
+  "mass": {
+    "main_mae": 37.89,
+    "ablation_mae": 46.56,
+    "delta": 8.64,
+    "ci95": [
+      5.94,
+      11.33
+    ],
+    "significant": true
+  },
+  "fat": {
+    "main_mae": 4.69,
+    "ablation_mae": 4.53,
+    "delta": -0.15,
+    "ci95": [
+      -0.3,
+      0.01
+    ],
+    "significant": false
+  },
+  "carb": {
+    "main_mae": 6.15,
+    "ablation_mae": 6.08,
+    "delta": -0.07,
+    "ci95": [
+      -0.26,
+      0.15
+    ],
+    "significant": false
+  },
+  "protein": {
+    "main_mae": 5.99,
+    "ablation_mae": 5.86,
+    "delta": -0.14,
+    "ci95": [
+      -0.44,
+      0.15
+    ],
+    "significant": false
+  }
+}

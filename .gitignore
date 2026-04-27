@@ -11,3 +11,8 @@ data/sample/imagery/
 # Python cache
 __pycache__/
 *.pyc
+# v2-rgbd-sota additions
+.venv/
+checkpoints/v2/                # giant .pt files; use LFS/HF Hub later
+docs/runs/main_seed42/eval_raw/  # duplicate of eval/, was used for debugging
+*.pt
