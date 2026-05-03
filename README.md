@@ -1,5 +1,7 @@
 # food-nutrition-estimator
 
+Report: [Final_Project_Report.pdf](https://github.com/user-attachments/files/27310648/Final_Project_Report.pdf)
+
 Multi-task RGB-D nutrition estimation on the [Nutrition5k](https://github.com/google-research-datasets/Nutrition5k) dataset.
 
 **Headline**: 4 of 5 scalar metrics beat the Google Direct Prediction baseline (Thames et al., CVPR 2021), trained in 14 minutes on a single A6000.
